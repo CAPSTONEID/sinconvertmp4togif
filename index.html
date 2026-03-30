@@ -434,7 +434,7 @@
     <div class="setting-group">
       <label>가로폭 (Width)</label>
       <div class="input-wrap">
-        <input type="number" id="opt-width" value="480" min="64" max="1920" step="8" />
+        <input type="number" id="opt-width" value="520" min="64" max="1920" step="8" />
         <span class="unit">px</span>
       </div>
       <div class="hint">세로폭은 비율에 맞게 자동 계산</div>
@@ -443,7 +443,7 @@
     <div class="setting-group">
       <label>프레임수 (FPS)</label>
       <div class="input-wrap">
-        <input type="number" id="opt-fps" value="15" min="1" max="30" step="1" />
+        <input type="number" id="opt-fps" value="30" min="1" max="30" step="1" />
         <span class="unit">fps</span>
       </div>
       <div class="hint">최대 30fps · 낮을수록 파일 크기 감소</div>
@@ -453,10 +453,10 @@
       <label>부메랑 효과</label>
       <div class="toggle-row" style="padding-top:0.3rem">
         <label class="toggle">
-          <input type="checkbox" id="opt-boomerang" />
+          <input type="checkbox" id="opt-boomerang" checked />
           <span class="toggle-track"></span>
         </label>
-        <span class="toggle-label" id="boomerang-label" style="color:var(--text-muted)">꺼짐</span>
+        <span class="toggle-label" id="boomerang-label" style="color:var(--accent-light)">켜짐</span>
       </div>
       <div class="hint">앞 → 뒤 → 앞으로 반복 재생</div>
     </div>
