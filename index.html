@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MP4 → GIF 변환기</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.js"></script>
+  <style>
+    :root {
+      --bg: #0d0d14;
+      --surface: #16161f;
+      --surface2: #1e1e2a;
+      --border: #2c2c40;
+      --accent: #7c5cfc;
+      --accent-light: #a48bfd;
+      --accent-bg: #7c5cfc1a;
+      --text: #e2e2ee;
+      --text-muted: #7878a0;
+      --success: #4ade80;
+      --error: #f87171;
+      --warn: #fbbf24;
+      --radius: 12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 2.5rem 1.5rem;
+    }
+
+    /* ─── LAYOUT ─── */
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+
+    header h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, #a48bfd 0%, #7c5cfc 50%, #5b8ef8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    header p {
+      color: var(--text-muted);
+      margin-top: 0.5rem;
+      font-size: 0.95rem;
+    }
+
+    /* ─── DROP ZONE ─── */
+    .drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 3rem 2rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      background: var(--surface);
+      position: relative;
+    }
+
+    .drop-zone:hover,
+    .drop-zone.drag-over {
+      border-color: var(--accent);
+      background: var(--accent-bg);
+    }
+
+    .drop-zone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+
+    .drop-icon {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+      display: block;
+    }
+
+    .drop-zone h2 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 0.4rem;
+    }
+
+    .drop-zone p {
+      color: var(--text-muted);
+      font-size: 0.875rem;
+    }
+
+    /* ─── SETTINGS ─── */
+    .settings {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      margin-top: 1.25rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 1.25rem;
+      align-items: end;
+    }
+
+    .setting-group label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    .setting-group .hint {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 0.3rem;
+      font-weight: 400;
+      text-transform: none;
+      letter-spacing: 0;
+    }
+
+    .input-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0 0.75rem;
+      transition: border-color 0.2s;
+    }
+
+    .input-wrap:focus-within {
+      border-color: var(--accent);
+    }
+
+    .input-wrap input {
+      background: none;
+      border: none;
+      outline: none;
+      color: var(--text);
+      font-size: 1rem;
+      font-family: inherit;
+      padding: 0.6rem 0;
+      width: 100%;
+      min-width: 0;
+    }
+
+    .input-wrap .unit {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    /* ─── TOGGLE ─── */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .toggle {
+      position: relative;
+      width: 44px;
+      height: 24px;
+      flex-shrink: 0;
+    }
+
+    .toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+
+    .toggle-track {
+      position: absolute;
+      inset: 0;
+      background: var(--border);
+      border-radius: 999px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .toggle input:checked + .toggle-track {
+      background: var(--accent);
+    }
+
+    .toggle-track::after {
+      content: '';
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      background: white;
+      border-radius: 50%;
+      top: 3px;
+      left: 3px;
+      transition: transform 0.2s;
+    }
+
+    .toggle input:checked + .toggle-track::after {
+      transform: translateX(20px);
+    }
+
+    .toggle-label {
+      font-size: 0.95rem;
+      cursor: pointer;
+    }
+
+    /* ─── FILE LIST ─── */
+    #file-list {
+      margin-top: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .file-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+
+    .file-card.done {
+      border-color: #4ade8044;
+    }
+
+    .file-card.error {
+      border-color: #f8717144;
+    }
+
+    .file-header {
+      display: flex;
+      align-items: center;
+      padding: 1rem 1.25rem;
+      gap: 0.75rem;
+    }
+
+    .file-icon {
+      font-size: 1.4rem;
+      flex-shrink: 0;
+    }
+
+    .file-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .file-name {
+      font-weight: 600;
+      font-size: 0.95rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .file-meta {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      margin-top: 0.2rem;
+    }
+
+    .file-status {
+      font-size: 0.82rem;
+      font-weight: 600;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .file-status.pending { color: var(--text-muted); }
+    .file-status.processing { color: var(--accent-light); }
+    .file-status.done { color: var(--success); }
+    .file-status.error { color: var(--error); }
+
+    /* ─── PROGRESS BAR ─── */
+    .progress-wrap {
+      padding: 0 1.25rem 1rem;
+    }
+
+    .progress-bar-bg {
+      background: var(--surface2);
+      border-radius: 999px;
+      height: 6px;
+      overflow: hidden;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--accent), var(--accent-light));
+      transition: width 0.15s ease;
+      width: 0%;
+    }
+
+    .progress-label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 0.4rem;
+    }
+
+    /* ─── PREVIEW / DOWNLOAD ─── */
+    .file-result {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 0.75rem 1.25rem 1rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .gif-preview {
+      width: 80px;
+      height: 56px;
+      object-fit: cover;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .result-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .result-info .result-size {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 0.15rem;
+    }
+
+    /* ─── BUTTONS ─── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.55rem 1.1rem;
+      border-radius: 8px;
+      border: none;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+      text-decoration: none;
+      font-family: inherit;
+      white-space: nowrap;
+    }
+
+    .btn:active { transform: scale(0.97); }
+
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+    }
+
+    .btn-primary:hover { opacity: 0.88; }
+
+    .btn-ghost {
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .btn-ghost:hover { border-color: var(--accent); color: var(--accent-light); }
+
+    .btn-success {
+      background: #4ade8022;
+      color: var(--success);
+      border: 1px solid #4ade8044;
+    }
+
+    .btn-success:hover { background: #4ade8033; }
+
+    /* ─── ACTIONS BAR ─── */
+    .actions {
+      display: flex;
+      gap: 0.75rem;
+      margin-top: 1.5rem;
+      flex-wrap: wrap;
+    }
+
+    /* ─── EMPTY STATE ─── */
+    #empty-state {
+      text-align: center;
+      padding: 2rem;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+
+    /* ─── SCROLLBAR ─── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* ─── RESPONSIVE ─── */
+    @media (max-width: 520px) {
+      body { padding: 1.25rem 1rem; }
+      header h1 { font-size: 1.5rem; }
+      .settings { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <h1>MP4 → GIF 변환기</h1>
+    <p>영상을 무한반복 GIF로 변환 · 부메랑 효과 · 다중 파일 동시 변환</p>
+  </header>
+
+  <!-- DROP ZONE -->
+  <div class="drop-zone" id="drop-zone">
+    <input type="file" id="file-input" accept="video/*" multiple />
+    <span class="drop-icon">🎬</span>
+    <h2>영상 파일을 여기에 드래그하거나 클릭해서 선택</h2>
+    <p>MP4, MOV, WebM 등 · 여러 파일 동시 선택 가능</p>
+  </div>
+
+  <!-- SETTINGS -->
+  <div class="settings">
+
+    <div class="setting-group">
+      <label>가로폭 (Width)</label>
+      <div class="input-wrap">
+        <input type="number" id="opt-width" value="480" min="64" max="1920" step="8" />
+        <span class="unit">px</span>
+      </div>
+      <div class="hint">세로폭은 비율에 맞게 자동 계산</div>
+    </div>
+
+    <div class="setting-group">
+      <label>프레임수 (FPS)</label>
+      <div class="input-wrap">
+        <input type="number" id="opt-fps" value="15" min="1" max="30" step="1" />
+        <span class="unit">fps</span>
+      </div>
+      <div class="hint">최대 30fps · 낮을수록 파일 크기 감소</div>
+    </div>
+
+    <div class="setting-group">
+      <label>부메랑 효과</label>
+      <div class="toggle-row" style="padding-top:0.3rem">
+        <label class="toggle">
+          <input type="checkbox" id="opt-boomerang" />
+          <span class="toggle-track"></span>
+        </label>
+        <span class="toggle-label" id="boomerang-label" style="color:var(--text-muted)">꺼짐</span>
+      </div>
+      <div class="hint">앞 → 뒤 → 앞으로 반복 재생</div>
+    </div>
+
+  </div>
+
+  <!-- ACTIONS -->
+  <div class="actions" id="actions" style="display:none">
+    <button class="btn btn-primary" id="btn-convert">▶ 변환 시작</button>
+    <button class="btn btn-ghost" id="btn-clear">✕ 목록 초기화</button>
+    <button class="btn btn-success" id="btn-download-all" style="display:none">⬇ 전체 다운로드</button>
+  </div>
+
+  <!-- FILE LIST -->
+  <div id="file-list">
+    <div id="empty-state" style="display:none">추가된 파일이 없습니다.</div>
+  </div>
+
+</div>
+
+<script>
+// ─── STATE ──────────────────────────────────────────────────────────────
+const state = {
+  files: [],      // { id, file, status, progress, progressLabel, blob, objectURL }
+  workerURL: null,
+  converting: false,
+};
+
+let idCounter = 0;
+const newId = () => ++idCounter;
+
+// ─── DOM REFS ────────────────────────────────────────────────────────────
+const dropZone   = document.getElementById('drop-zone');
+const fileInput  = document.getElementById('file-input');
+const fileList   = document.getElementById('file-list');
+const actions    = document.getElementById('actions');
+const btnConvert = document.getElementById('btn-convert');
+const btnClear   = document.getElementById('btn-clear');
+const btnDlAll   = document.getElementById('btn-download-all');
+
+const optWidth    = document.getElementById('opt-width');
+const optFps      = document.getElementById('opt-fps');
+const optBoomerang = document.getElementById('opt-boomerang');
+
+// ─── BOOMERANG LABEL ─────────────────────────────────────────────────────
+optBoomerang.addEventListener('change', () => {
+  const lbl = document.getElementById('boomerang-label');
+  lbl.textContent = optBoomerang.checked ? '켜짐' : '꺼짐';
+  lbl.style.color = optBoomerang.checked ? 'var(--accent-light)' : 'var(--text-muted)';
+});
+
+// ─── FPS CLAMP ───────────────────────────────────────────────────────────
+optFps.addEventListener('change', () => {
+  let v = parseInt(optFps.value, 10);
+  if (isNaN(v) || v < 1) v = 1;
+  if (v > 30) v = 30;
+  optFps.value = v;
+});
+
+// ─── DROP ZONE ───────────────────────────────────────────────────────────
+dropZone.addEventListener('dragover', e => {
+  e.preventDefault();
+  dropZone.classList.add('drag-over');
+});
+
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  addFiles([...e.dataTransfer.files]);
+});
+
+fileInput.addEventListener('change', () => {
+  addFiles([...fileInput.files]);
+  fileInput.value = '';
+});
+
+// ─── ADD FILES ───────────────────────────────────────────────────────────
+function addFiles(files) {
+  const videoFiles = files.filter(f => f.type.startsWith('video/') || /\.(mp4|mov|webm|avi|mkv)$/i.test(f.name));
+  if (!videoFiles.length) return;
+
+  videoFiles.forEach(file => {
+    const entry = { id: newId(), file, status: 'pending', progress: 0, progressLabel: '', blob: null, objectURL: null };
+    state.files.push(entry);
+    renderFileCard(entry);
+  });
+
+  actions.style.display = 'flex';
+  btnDlAll.style.display = 'none';
+}
+
+// ─── RENDER FILE CARD ────────────────────────────────────────────────────
+function renderFileCard(entry) {
+  const card = document.createElement('div');
+  card.className = 'file-card';
+  card.id = `card-${entry.id}`;
+  card.innerHTML = `
+    <div class="file-header">
+      <span class="file-icon">🎞️</span>
+      <div class="file-info">
+        <div class="file-name" title="${escHtml(entry.file.name)}">${escHtml(entry.file.name)}</div>
+        <div class="file-meta">${formatSize(entry.file.size)}</div>
+      </div>
+      <span class="file-status pending" id="status-${entry.id}">대기중</span>
+    </div>
+    <div class="progress-wrap" id="prog-wrap-${entry.id}" style="display:none">
+      <div class="progress-bar-bg">
+        <div class="progress-bar-fill" id="prog-bar-${entry.id}"></div>
+      </div>
+      <div class="progress-label" id="prog-label-${entry.id}"></div>
+    </div>
+  `;
+  fileList.appendChild(card);
+}
+
+// ─── UPDATE CARD STATUS ──────────────────────────────────────────────────
+function setStatus(id, status, label) {
+  const el = document.getElementById(`status-${id}`);
+  if (!el) return;
+  el.className = `file-status ${status}`;
+  el.textContent = label;
+  const card = document.getElementById(`card-${id}`);
+  if (card) {
+    card.classList.remove('done', 'error');
+    if (status === 'done') card.classList.add('done');
+    if (status === 'error') card.classList.add('error');
+  }
+}
+
+function setProgress(id, pct, label) {
+  const wrap = document.getElementById(`prog-wrap-${id}`);
+  const bar  = document.getElementById(`prog-bar-${id}`);
+  const lbl  = document.getElementById(`prog-label-${id}`);
+  if (!wrap) return;
+  wrap.style.display = 'block';
+  bar.style.width = `${Math.min(100, pct)}%`;
+  if (lbl) lbl.textContent = label || '';
+}
+
+function showResult(entry) {
+  const card = document.getElementById(`card-${entry.id}`);
+  if (!card || !entry.blob) return;
+  const progWrap = document.getElementById(`prog-wrap-${entry.id}`);
+  if (progWrap) progWrap.style.display = 'none';
+
+  const url = entry.objectURL || URL.createObjectURL(entry.blob);
+  entry.objectURL = url;
+
+  const baseName = entry.file.name.replace(/\.[^.]+$/, '');
+  const resultDiv = document.createElement('div');
+  resultDiv.className = 'file-result';
+  resultDiv.innerHTML = `
+    <img class="gif-preview" src="${url}" alt="GIF 미리보기" />
+    <div class="result-info">
+      <div style="font-weight:600;font-size:0.9rem">${escHtml(baseName)}.gif</div>
+      <div class="result-size">${formatSize(entry.blob.size)}</div>
+    </div>
+    <a class="btn btn-success" href="${url}" download="${escHtml(baseName)}.gif">⬇ 다운로드</a>
+  `;
+  card.appendChild(resultDiv);
+}
+
+// ─── CLEAR ───────────────────────────────────────────────────────────────
+btnClear.addEventListener('click', () => {
+  if (state.converting) return;
+  state.files.forEach(e => { if (e.objectURL) URL.revokeObjectURL(e.objectURL); });
+  state.files = [];
+  fileList.innerHTML = '';
+  actions.style.display = 'none';
+  btnDlAll.style.display = 'none';
+});
+
+// ─── DOWNLOAD ALL ────────────────────────────────────────────────────────
+btnDlAll.addEventListener('click', () => {
+  const done = state.files.filter(e => e.status === 'done' && e.blob && e.objectURL);
+  done.forEach(e => {
+    const a = document.createElement('a');
+    a.href = e.objectURL;
+    a.download = e.file.name.replace(/\.[^.]+$/, '') + '.gif';
+    a.click();
+  });
+});
+
+// ─── CONVERT ─────────────────────────────────────────────────────────────
+btnConvert.addEventListener('click', async () => {
+  if (state.converting) return;
+  const pending = state.files.filter(e => e.status === 'pending');
+  if (!pending.length) { alert('변환할 파일이 없습니다.'); return; }
+
+  state.converting = true;
+  btnConvert.disabled = true;
+  btnConvert.textContent = '⏳ 변환 중...';
+
+  const width = Math.max(64, Math.min(1920, parseInt(optWidth.value, 10) || 480));
+  const fps   = Math.max(1,  Math.min(30,   parseInt(optFps.value,   10) || 15));
+  const boomerang = optBoomerang.checked;
+
+  // Load GIF worker once
+  if (!state.workerURL) {
+    try {
+      const resp = await fetch('https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js');
+      const text = await resp.text();
+      const blob = new Blob([text], { type: 'application/javascript' });
+      state.workerURL = URL.createObjectURL(blob);
+    } catch (err) {
+      console.warn('Worker 로드 실패, 직접 URL 사용:', err);
+      state.workerURL = 'https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js';
+    }
+  }
+
+  // Process sequentially
+  for (const entry of pending) {
+    setStatus(entry.id, 'processing', '변환 중...');
+    setProgress(entry.id, 0, '비디오 로드 중...');
+    try {
+      entry.blob = await convertToGif(entry, { width, fps, boomerang });
+      entry.status = 'done';
+      setStatus(entry.id, 'done', '완료 ✓');
+      showResult(entry);
+    } catch (err) {
+      console.error('변환 실패:', entry.file.name, err);
+      entry.status = 'error';
+      setStatus(entry.id, 'error', '실패');
+      setProgress(entry.id, 100, '오류: ' + (err.message || '알 수 없는 오류'));
+    }
+  }
+
+  const anyDone = state.files.some(e => e.status === 'done');
+  if (anyDone) btnDlAll.style.display = 'flex';
+
+  btnConvert.disabled = false;
+  btnConvert.textContent = '▶ 변환 시작';
+  state.converting = false;
+});
+
+// ─── CORE: VIDEO → GIF ───────────────────────────────────────────────────
+async function convertToGif(entry, { width, fps, boomerang }) {
+  const { id, file } = entry;
+
+  // 1. Load video
+  const videoURL = URL.createObjectURL(file);
+  const video = document.createElement('video');
+  video.src = videoURL;
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = 'auto';
+
+  await new Promise((resolve, reject) => {
+    video.addEventListener('loadedmetadata', resolve, { once: true });
+    video.addEventListener('error', reject, { once: true });
+    video.load();
+  });
+
+  const duration = video.duration;
+  const aspectRatio = video.videoHeight / video.videoWidth;
+  const targetW = width;
+  const targetH = Math.max(2, Math.round(targetW * aspectRatio));
+
+  const canvas = document.createElement('canvas');
+  canvas.width  = targetW;
+  canvas.height = targetH;
+  const ctx = canvas.getContext('2d');
+
+  const frameInterval = 1 / fps;
+  const totalFrames   = Math.floor(duration * fps);
+
+  setProgress(id, 0, `프레임 추출 중... (총 ${totalFrames}프레임)`);
+
+  // 2. Extract frames
+  const frames = [];
+  for (let i = 0; i < totalFrames; i++) {
+    const time = i * frameInterval;
+    await seekVideo(video, time);
+    ctx.drawImage(video, 0, 0, targetW, targetH);
+    frames.push(ctx.getImageData(0, 0, targetW, targetH));
+
+    const pct = Math.round((i / totalFrames) * (boomerang ? 50 : 90));
+    setProgress(id, pct, `프레임 추출 중... ${i + 1} / ${totalFrames}`);
+  }
+
+  URL.revokeObjectURL(videoURL);
+
+  // 3. Build frame list (boomerang = fwd + reversed)
+  const allFrames = boomerang
+    ? [...frames, ...frames.slice().reverse()]
+    : frames;
+
+  if (boomerang) {
+    setProgress(id, 55, '부메랑 프레임 생성 중...');
+  }
+
+  // 4. Encode GIF
+  setProgress(id, boomerang ? 60 : 92, 'GIF 인코딩 중...');
+
+  const blob = await encodeGif(allFrames, targetW, targetH, fps, id, boomerang);
+  setProgress(id, 100, '완료!');
+  return blob;
+}
+
+function seekVideo(video, time) {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => resolve(), 3000);
+    const handler = () => {
+      clearTimeout(timeout);
+      video.removeEventListener('seeked', handler);
+      video.removeEventListener('error', onErr);
+      resolve();
+    };
+    const onErr = (e) => {
+      clearTimeout(timeout);
+      video.removeEventListener('seeked', handler);
+      video.removeEventListener('error', onErr);
+      reject(e);
+    };
+    video.addEventListener('seeked', handler, { once: true });
+    video.addEventListener('error', onErr, { once: true });
+    video.currentTime = time;
+  });
+}
+
+function encodeGif(frames, width, height, fps, cardId, boomerang) {
+  return new Promise((resolve, reject) => {
+    const gif = new GIF({
+      repeat:       0,        // 무한반복
+      quality:      8,
+      width,
+      height,
+      workerScript: state.workerURL,
+    });
+
+    const delay = Math.round(1000 / fps);
+    const canvas = document.createElement('canvas');
+    canvas.width  = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+
+    const totalFrames = frames.length;
+    frames.forEach((imgData, i) => {
+      ctx.putImageData(imgData, 0, 0);
+      gif.addFrame(ctx, { delay, copy: true });
+    });
+
+    gif.on('progress', p => {
+      const base = boomerang ? 60 : 92;
+      const range = boomerang ? 40 : 8;
+      setProgress(cardId, Math.round(base + p * range), `GIF 인코딩 중... ${Math.round(p * 100)}%`);
+    });
+
+    gif.on('finished', blob => resolve(blob));
+    gif.on('error',    err  => reject(err));
+
+    gif.render();
+  });
+}
+
+// ─── UTILS ───────────────────────────────────────────────────────────────
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+</script>
+</body>
+</html>
