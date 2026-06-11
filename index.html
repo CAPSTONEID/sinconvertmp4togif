@@ -450,6 +450,22 @@
     </div>
 
     <div class="setting-group">
+      <label>목표 용량 (Max)</label>
+      <div class="toggle-row" style="margin-bottom:0.5rem">
+        <label class="toggle">
+          <input type="checkbox" id="opt-target-on" />
+          <span class="toggle-track"></span>
+        </label>
+        <span class="toggle-label" id="target-label" style="color:var(--text-muted)">꺼짐</span>
+      </div>
+      <div class="input-wrap">
+        <input type="number" id="opt-target" value="5" min="0.1" max="100" step="0.5" disabled />
+        <span class="unit">MB</span>
+      </div>
+      <div class="hint">켜면 목표 이하로 폭·프레임 자동 축소</div>
+    </div>
+
+    <div class="setting-group">
       <label>부메랑 효과</label>
       <div class="toggle-row" style="padding-top:0.3rem">
         <label class="toggle">
@@ -500,13 +516,72 @@ const btnDlAll   = document.getElementById('btn-download-all');
 const optWidth    = document.getElementById('opt-width');
 const optFps      = document.getElementById('opt-fps');
 const optBoomerang = document.getElementById('opt-boomerang');
+const optTargetOn = document.getElementById('opt-target-on');
+const optTarget   = document.getElementById('opt-target');
+
+// 코덱·콘텐츠마다 다른 GIF 압축률 근사치(바이트/픽셀/프레임). 실제 인코딩 후 보정됨.
+const DEFAULT_BPP = 0.85;
 
 // ─── BOOMERANG LABEL ─────────────────────────────────────────────────────
 optBoomerang.addEventListener('change', () => {
   const lbl = document.getElementById('boomerang-label');
   lbl.textContent = optBoomerang.checked ? '켜짐' : '꺼짐';
   lbl.style.color = optBoomerang.checked ? 'var(--accent-light)' : 'var(--text-muted)';
+  refreshEstimates();
 });
+
+// ─── TARGET SIZE TOGGLE ──────────────────────────────────────────────────
+optTargetOn.addEventListener('change', () => {
+  const lbl = document.getElementById('target-label');
+  lbl.textContent = optTargetOn.checked ? '켜짐' : '꺼짐';
+  lbl.style.color = optTargetOn.checked ? 'var(--accent-light)' : 'var(--text-muted)';
+  optTarget.disabled = !optTargetOn.checked;
+  refreshEstimates();
+});
+
+// width/fps/목표 변경 시 예상 용량 실시간 갱신
+[optWidth, optFps, optTarget].forEach(el =>
+  el.addEventListener('input', refreshEstimates));
+
+// 현재 설정 기준 모든 파일 카드의 예상 용량 다시 계산
+function refreshEstimates() {
+  const width = clampWidth(optWidth.value);
+  const fps   = clampFps(optFps.value);
+  const boomerang = optBoomerang.checked;
+  const targetBytes = optTargetOn.checked ? targetToBytes() : null;
+  state.files.forEach(entry => updateEstimate(entry, { width, fps, boomerang, targetBytes }));
+}
+
+// 파일 한 개의 예상 용량을 meta 영역에 표시
+function updateEstimate(entry, { width, fps, boomerang, targetBytes }) {
+  const meta = document.getElementById(`meta-${entry.id}`);
+  if (!meta) return;
+  // 변환 완료된 파일은 실측값 유지
+  if (entry.status === 'done') return;
+  if (!entry.duration || !entry.aspect) {
+    meta.textContent = formatSize(entry.file.size);
+    return;
+  }
+  const w = Math.min(width, 1920);
+  const h = Math.max(2, Math.round(w * entry.aspect));
+  const nFrames = Math.max(1, Math.floor(entry.duration * fps)) * (boomerang ? 2 : 1);
+  const bpp = entry.bpp || DEFAULT_BPP;
+  const est = bpp * w * h * nFrames;
+  let txt = `${formatSize(entry.file.size)} → 예상 GIF ~${formatSize(est)}`;
+  if (targetBytes && est > targetBytes) {
+    txt += ` · 목표 ${formatSize(targetBytes)} 초과 → 자동 축소`;
+  }
+  meta.textContent = txt;
+}
+
+// 목표 입력값(MB) → bytes
+function targetToBytes() {
+  const mb = parseFloat(optTarget.value);
+  return (isNaN(mb) || mb <= 0) ? null : mb * 1024 * 1024;
+}
+
+const clampWidth = v => Math.max(64, Math.min(1920, parseInt(v, 10) || 480));
+const clampFps   = v => Math.max(1,  Math.min(30,   parseInt(v, 10) || 15));
 
 // ─── FPS CLAMP ───────────────────────────────────────────────────────────
 optFps.addEventListener('change', () => {
@@ -541,13 +616,36 @@ function addFiles(files) {
   if (!videoFiles.length) return;
 
   videoFiles.forEach(file => {
-    const entry = { id: newId(), file, status: 'pending', progress: 0, progressLabel: '', blob: null, objectURL: null };
+    const entry = { id: newId(), file, status: 'pending', progress: 0, progressLabel: '',
+                    blob: null, objectURL: null, duration: null, aspect: null, bpp: null };
     state.files.push(entry);
     renderFileCard(entry);
+    loadMeta(entry);   // 영상 길이·비율 비동기 로드 → 예상 용량 표시
   });
 
   actions.style.display = 'flex';
   btnDlAll.style.display = 'none';
+}
+
+// 영상 메타데이터(길이·종횡비)만 빠르게 읽어 예상 용량 산출에 사용
+function loadMeta(entry) {
+  const url = URL.createObjectURL(entry.file);
+  const v = document.createElement('video');
+  v.preload = 'metadata';
+  v.muted = true;
+  v.addEventListener('loadedmetadata', () => {
+    entry.duration = v.duration;
+    entry.aspect   = v.videoHeight / v.videoWidth;
+    URL.revokeObjectURL(url);
+    updateEstimate(entry, {
+      width: clampWidth(optWidth.value),
+      fps: clampFps(optFps.value),
+      boomerang: optBoomerang.checked,
+      targetBytes: optTargetOn.checked ? targetToBytes() : null,
+    });
+  }, { once: true });
+  v.addEventListener('error', () => URL.revokeObjectURL(url), { once: true });
+  v.src = url;
 }
 
 // ─── RENDER FILE CARD ────────────────────────────────────────────────────
@@ -560,7 +658,7 @@ function renderFileCard(entry) {
       <span class="file-icon">🎞️</span>
       <div class="file-info">
         <div class="file-name" title="${escHtml(entry.file.name)}">${escHtml(entry.file.name)}</div>
-        <div class="file-meta">${formatSize(entry.file.size)}</div>
+        <div class="file-meta" id="meta-${entry.id}">${formatSize(entry.file.size)}</div>
       </div>
       <span class="file-status pending" id="status-${entry.id}">대기중</span>
     </div>
@@ -608,13 +706,20 @@ function showResult(entry) {
   entry.objectURL = url;
 
   const baseName = entry.file.name.replace(/\.[^.]+$/, '');
+  // auto-fit이 최종 적용한 폭·프레임수 표기
+  let spec = '';
+  if (entry.landed) {
+    const { w, h, fps, under } = entry.landed;
+    spec = ` · ${w}×${h}px · ${fps}fps`;
+    if (under === false) spec += ' · ⚠ 목표 미달성';
+  }
   const resultDiv = document.createElement('div');
   resultDiv.className = 'file-result';
   resultDiv.innerHTML = `
     <img class="gif-preview" src="${url}" alt="GIF 미리보기" />
     <div class="result-info">
       <div style="font-weight:600;font-size:0.9rem">${escHtml(baseName)}.gif</div>
-      <div class="result-size">${formatSize(entry.blob.size)}</div>
+      <div class="result-size">${formatSize(entry.blob.size)}${spec}</div>
     </div>
     <a class="btn btn-success" href="${url}" download="${escHtml(baseName)}.gif">⬇ 다운로드</a>
   `;
@@ -652,9 +757,10 @@ btnConvert.addEventListener('click', async () => {
   btnConvert.disabled = true;
   btnConvert.textContent = '⏳ 변환 중...';
 
-  const width = Math.max(64, Math.min(1920, parseInt(optWidth.value, 10) || 480));
-  const fps   = Math.max(1,  Math.min(30,   parseInt(optFps.value,   10) || 15));
+  const width = clampWidth(optWidth.value);
+  const fps   = clampFps(optFps.value);
   const boomerang = optBoomerang.checked;
+  const targetBytes = optTargetOn.checked ? targetToBytes() : null;
 
   // Load GIF worker once
   if (!state.workerURL) {
@@ -674,7 +780,7 @@ btnConvert.addEventListener('click', async () => {
     setStatus(entry.id, 'processing', '변환 중...');
     setProgress(entry.id, 0, '비디오 로드 중...');
     try {
-      entry.blob = await convertToGif(entry, { width, fps, boomerang });
+      entry.blob = await convertToGif(entry, { width, fps, boomerang, targetBytes });
       entry.status = 'done';
       setStatus(entry.id, 'done', '완료 ✓');
       showResult(entry);
@@ -695,7 +801,7 @@ btnConvert.addEventListener('click', async () => {
 });
 
 // ─── CORE: VIDEO → GIF ───────────────────────────────────────────────────
-async function convertToGif(entry, { width, fps, boomerang }) {
+async function convertToGif(entry, { width, fps, boomerang, targetBytes }) {
   const { id, file } = entry;
 
   // 1. Load video
@@ -712,50 +818,111 @@ async function convertToGif(entry, { width, fps, boomerang }) {
     video.load();
   });
 
-  const duration = video.duration;
+  const duration   = video.duration;
   const aspectRatio = video.videoHeight / video.videoWidth;
-  const targetW = width;
-  const targetH = Math.max(2, Math.round(targetW * aspectRatio));
+  // 사용자가 정한 width·fps는 "상한(ceiling)". 목표 용량 맞출 땐 여기서 아래로만 축소.
+  const ceilW   = width;
+  const ceilH   = Math.max(2, Math.round(ceilW * aspectRatio));
+  const ceilFps = fps;
 
   const canvas = document.createElement('canvas');
-  canvas.width  = targetW;
-  canvas.height = targetH;
+  canvas.width  = ceilW;
+  canvas.height = ceilH;
   const ctx = canvas.getContext('2d');
 
-  const frameInterval = 1 / fps;
-  const totalFrames   = Math.floor(duration * fps);
+  const frameInterval = 1 / ceilFps;
+  const totalFrames   = Math.max(1, Math.floor(duration * ceilFps));
 
   setProgress(id, 0, `프레임 추출 중... (총 ${totalFrames}프레임)`);
 
-  // 2. Extract frames
-  const frames = [];
+  // 2. 프레임은 상한 해상도·fps로 "단 한 번"만 추출 → 이후 축소 검색은 캐시에서만 처리(재seek 금지)
+  const baseFrames = [];
   for (let i = 0; i < totalFrames; i++) {
-    const time = i * frameInterval;
-    await seekVideo(video, time);
-    ctx.drawImage(video, 0, 0, targetW, targetH);
-    frames.push(ctx.getImageData(0, 0, targetW, targetH));
-
-    const pct = Math.round((i / totalFrames) * (boomerang ? 50 : 90));
-    setProgress(id, pct, `프레임 추출 중... ${i + 1} / ${totalFrames}`);
+    await seekVideo(video, i * frameInterval);
+    ctx.drawImage(video, 0, 0, ceilW, ceilH);
+    baseFrames.push(ctx.getImageData(0, 0, ceilW, ceilH));
+    setProgress(id, Math.round((i / totalFrames) * 45), `프레임 추출 중... ${i + 1} / ${totalFrames}`);
   }
-
   URL.revokeObjectURL(videoURL);
 
-  // 3. Build frame list (boomerang = fwd + reversed)
-  const allFrames = boomerang
-    ? [...frames, ...frames.slice().reverse()]
-    : frames;
-
-  if (boomerang) {
-    setProgress(id, 55, '부메랑 프레임 생성 중...');
+  // 주어진 폭·fps로 캐시 프레임을 축소·샘플링 후 인코딩 (재추출 없음)
+  async function encodeAt(w, fpsOut, label) {
+    const h = Math.max(2, Math.round(w * aspectRatio));
+    let f = scaleFrames(baseFrames, ceilW, ceilH, w, h);
+    f = sampleFps(f, ceilFps, fpsOut);
+    const all = boomerang ? [...f, ...f.slice().reverse()] : f;
+    return encodeGif(all, w, h, fpsOut, id, label);
   }
 
-  // 4. Encode GIF
-  setProgress(id, boomerang ? 60 : 92, 'GIF 인코딩 중...');
+  // 목표 용량 미설정 → 상한 그대로 1회 인코딩
+  if (!targetBytes) {
+    const blob = await encodeAt(ceilW, ceilFps, 'GIF 인코딩 중...');
+    entry.landed = { w: ceilW, h: ceilH, fps: ceilFps, under: true };
+    setProgress(id, 100, '완료!');
+    return blob;
+  }
 
-  const blob = await encodeGif(allFrames, targetW, targetH, fps, id, boomerang);
-  setProgress(id, 100, '완료!');
+  // 3. 목표 맞춤(auto-fit): 상한 1회 인코딩 → 실측 BPP로 폭 역산 → 부족하면 fps 축소
+  const nFrames = (f, fp) => Math.max(1, Math.floor(duration * fp)) * (boomerang ? 2 : 1);
+
+  let w = ceilW, fpsOut = ceilFps, tries = 0;
+  setProgress(id, 50, '목표 맞춤 인코딩 중... (1차)');
+  let blob = await encodeAt(w, fpsOut, '목표 맞춤 인코딩 중... (1차)');
+  // 실측 압축률로 보정 → 다음 파일/예상치 정확도 ↑
+  entry.bpp = blob.size / (w * Math.max(2, Math.round(w * aspectRatio)) * nFrames(duration, fpsOut));
+
+  // 폭은 용량에 제곱으로 작용 → 가장 큰 레버. 폭부터 줄임.
+  while (blob.size > targetBytes && w > 64 && tries < 4) {
+    tries++;
+    const h0 = Math.max(2, Math.round(w * aspectRatio));
+    const curBpp = blob.size / (w * h0 * nFrames(duration, fpsOut));
+    // target = bpp · w² · aspect · frames  →  w = √(target / (bpp·aspect·frames))
+    let solved = Math.floor(Math.sqrt(targetBytes / (curBpp * aspectRatio * nFrames(duration, fpsOut))));
+    solved = Math.max(64, Math.min(w - 8, solved));   // 항상 더 작게
+    w = solved;
+    setProgress(id, 60 + tries * 6, `목표 맞춤 인코딩 중... 폭 ${w}px`);
+    blob = await encodeAt(w, fpsOut, `목표 맞춤 인코딩 중... 폭 ${w}px`);
+  }
+
+  // 최소 폭에서도 초과 → 프레임수(fps) 단계적 축소
+  let fpsTries = 0;
+  while (blob.size > targetBytes && fpsOut > 1 && fpsTries < 5) {
+    fpsTries++;
+    const ratio = targetBytes / blob.size;
+    fpsOut = Math.max(1, Math.min(fpsOut - 1, Math.floor(fpsOut * ratio)));
+    setProgress(id, 85 + fpsTries * 2, `목표 맞춤 인코딩 중... ${fpsOut}fps`);
+    blob = await encodeAt(w, fpsOut, `목표 맞춤 인코딩 중... ${fpsOut}fps`);
+  }
+
+  entry.landed = {
+    w, h: Math.max(2, Math.round(w * aspectRatio)), fps: fpsOut,
+    under: blob.size <= targetBytes,
+  };
+  setProgress(id, 100, entry.landed.under ? '완료!' : '최소값 도달 (목표 미달성)');
   return blob;
+}
+
+// 캐시된 ImageData 프레임을 임시 캔버스로 다운스케일 (재추출 없이 해상도만 축소)
+function scaleFrames(frames, srcW, srcH, dstW, dstH) {
+  if (dstW === srcW && dstH === srcH) return frames;
+  const s = document.createElement('canvas'); s.width = srcW; s.height = srcH;
+  const sctx = s.getContext('2d');
+  const d = document.createElement('canvas'); d.width = dstW; d.height = dstH;
+  const dctx = d.getContext('2d');
+  return frames.map(img => {
+    sctx.putImageData(img, 0, 0);
+    dctx.drawImage(s, 0, 0, dstW, dstH);
+    return dctx.getImageData(0, 0, dstW, dstH);
+  });
+}
+
+// 프레임을 일정 간격으로 솎아 목표 fps로 다운샘플 (배열 연산만)
+function sampleFps(frames, srcFps, dstFps) {
+  if (dstFps >= srcFps) return frames;
+  const step = srcFps / dstFps;
+  const out = [];
+  for (let t = 0; t < frames.length; t += step) out.push(frames[Math.floor(t)]);
+  return out;
 }
 
 function seekVideo(video, time) {
@@ -779,11 +946,11 @@ function seekVideo(video, time) {
   });
 }
 
-function encodeGif(frames, width, height, fps, cardId, boomerang) {
+function encodeGif(frames, width, height, fps, cardId, label) {
   return new Promise((resolve, reject) => {
     const gif = new GIF({
       repeat:       0,        // 무한반복
-      quality:      8,
+      quality:      8,        // gif.js: 값이 클수록 거칠고 용량 ↓ (현 단계 고정, 폭·fps로 제어)
       width,
       height,
       workerScript: state.workerURL,
@@ -795,16 +962,14 @@ function encodeGif(frames, width, height, fps, cardId, boomerang) {
     canvas.height = height;
     const ctx = canvas.getContext('2d');
 
-    const totalFrames = frames.length;
-    frames.forEach((imgData, i) => {
+    frames.forEach(imgData => {
       ctx.putImageData(imgData, 0, 0);
       gif.addFrame(ctx, { delay, copy: true });
     });
 
+    // 인코딩 진행은 50→100% 구간에 매핑
     gif.on('progress', p => {
-      const base = boomerang ? 60 : 92;
-      const range = boomerang ? 40 : 8;
-      setProgress(cardId, Math.round(base + p * range), `GIF 인코딩 중... ${Math.round(p * 100)}%`);
+      setProgress(cardId, Math.round(50 + p * 50), `${label || 'GIF 인코딩 중...'} ${Math.round(p * 100)}%`);
     });
 
     gif.on('finished', blob => resolve(blob));
