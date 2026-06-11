@@ -451,18 +451,11 @@
 
     <div class="setting-group">
       <label>목표 용량 (Max)</label>
-      <div class="toggle-row" style="margin-bottom:0.5rem">
-        <label class="toggle">
-          <input type="checkbox" id="opt-target-on" />
-          <span class="toggle-track"></span>
-        </label>
-        <span class="toggle-label" id="target-label" style="color:var(--text-muted)">꺼짐</span>
-      </div>
       <div class="input-wrap">
-        <input type="number" id="opt-target" value="5" min="0.1" max="100" step="0.5" disabled />
+        <input type="number" id="opt-target" placeholder="제한 없음" min="0.1" max="100" step="0.5" />
         <span class="unit">MB</span>
       </div>
-      <div class="hint">켜면 목표 이하로 폭·프레임 자동 축소</div>
+      <div class="hint">값 입력 시 목표 이하로 폭·프레임 자동 축소 · 비우면 제한 없음</div>
     </div>
 
     <div class="setting-group">
@@ -516,7 +509,6 @@ const btnDlAll   = document.getElementById('btn-download-all');
 const optWidth    = document.getElementById('opt-width');
 const optFps      = document.getElementById('opt-fps');
 const optBoomerang = document.getElementById('opt-boomerang');
-const optTargetOn = document.getElementById('opt-target-on');
 const optTarget   = document.getElementById('opt-target');
 
 // 코덱·콘텐츠마다 다른 GIF 압축률 근사치(바이트/픽셀/프레임). 실제 인코딩 후 보정됨.
@@ -530,15 +522,6 @@ optBoomerang.addEventListener('change', () => {
   refreshEstimates();
 });
 
-// ─── TARGET SIZE TOGGLE ──────────────────────────────────────────────────
-optTargetOn.addEventListener('change', () => {
-  const lbl = document.getElementById('target-label');
-  lbl.textContent = optTargetOn.checked ? '켜짐' : '꺼짐';
-  lbl.style.color = optTargetOn.checked ? 'var(--accent-light)' : 'var(--text-muted)';
-  optTarget.disabled = !optTargetOn.checked;
-  refreshEstimates();
-});
-
 // width/fps/목표 변경 시 예상 용량 실시간 갱신
 [optWidth, optFps, optTarget].forEach(el =>
   el.addEventListener('input', refreshEstimates));
@@ -548,7 +531,7 @@ function refreshEstimates() {
   const width = clampWidth(optWidth.value);
   const fps   = clampFps(optFps.value);
   const boomerang = optBoomerang.checked;
-  const targetBytes = optTargetOn.checked ? targetToBytes() : null;
+  const targetBytes = targetToBytes();
   state.files.forEach(entry => updateEstimate(entry, { width, fps, boomerang, targetBytes }));
 }
 
@@ -641,7 +624,7 @@ function loadMeta(entry) {
       width: clampWidth(optWidth.value),
       fps: clampFps(optFps.value),
       boomerang: optBoomerang.checked,
-      targetBytes: optTargetOn.checked ? targetToBytes() : null,
+      targetBytes: targetToBytes(),
     });
   }, { once: true });
   v.addEventListener('error', () => URL.revokeObjectURL(url), { once: true });
@@ -760,7 +743,7 @@ btnConvert.addEventListener('click', async () => {
   const width = clampWidth(optWidth.value);
   const fps   = clampFps(optFps.value);
   const boomerang = optBoomerang.checked;
-  const targetBytes = optTargetOn.checked ? targetToBytes() : null;
+  const targetBytes = targetToBytes();
 
   // Load GIF worker once
   if (!state.workerURL) {
